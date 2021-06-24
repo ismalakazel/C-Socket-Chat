@@ -2,6 +2,9 @@
 #include <sys/un.h>
 #include <unistd.h>
 #include <poll.h>
+#include <stdio.h>
+#include <stdlib.h>
+#include <errno.h>
 #include "thread.h"
 
 #define SOCKET_PATH "/tmp/socket"
