@@ -110,27 +110,20 @@ int main() {
 				};
 
 				/// Probably, client connection terminated.
-				if (connection.revents != POLLIN) {
+				if (connection.revents != POLLIN) {					
 					/// Close connection.
 					close(connection.fd);
-					
+
 					/// Create new connection array without closed connection.
-					int count = 0;
 					int _nconnections = data->nconnections - 1;
-					struct pollfd *pfds = calloc(_nconnections, sizeof(struct pollfd));
-					for (int a = 0; a < _nconnections; a++) {
-						if (a == i) {
-							count++;
-						};
-						pfds[a] = data->connections[count];
-						count++;
+					for (int a = i; a < _nconnections; a++) {
+						data->connections[a] = data->connections[a+1];
 					};
 
 					/// Replace old connection array with resized one.
-					free(data->connections);
-					data->connections = calloc(_nconnections, sizeof(struct pollfd));
-					data->connections = pfds;
+					data->connections = realloc(data->connections, (_nconnections + 1) * sizeof(struct pollfd));
 					data->nconnections = _nconnections;
+					
 					continue;
 				};
 
