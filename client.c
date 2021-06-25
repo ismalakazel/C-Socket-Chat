@@ -76,7 +76,7 @@ int main(int argc, char * args[]) {
 	struct thread_info *info = malloc(sizeof(struct thread_info));
 	info->socket_fd = socket_fd;
 	info->username = username;
-	thread(thread_id, &write_to_socket, (void *) info);	
+	thread(thread_id, &write_to_socket, (void *) &info);	
 
 	struct pollfd pfd;
 	pfd.fd = socket_fd;
@@ -125,6 +125,7 @@ int main(int argc, char * args[]) {
 		};	
 	};
 
+	free(info);
 	remove(SOCKET_PATH);
 	close(socket_fd);
 	exit(EXIT_SUCCESS);
