@@ -190,4 +190,6 @@ int main() {
 	free(info);	
 	remove(SOCKET_PATH);
 	close(socket_fd);
+
+	exit(EXIT_SUCCESS);
 }
