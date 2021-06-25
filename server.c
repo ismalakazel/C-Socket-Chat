@@ -11,174 +11,139 @@
 #define SOCKET_BACKLOG 2
 #define handle_error(msg) do { perror(msg); exit(EXIT_FAILURE); } while (0)
 
-/*
- * Holds data (void *args) that is sent to accept_connections(void *args)
- */
-struct thread_info {
-	/// The server socket file descriptor.
-	int socket_fd;
-
-	/// The total number of socket connections.
-	int socket_conn_count;
-
-	// An array of struct pollfd. (See `$ man poll` for more information on this struct)
-	struct pollfd *socket_conn_fds;
+/// Holds data (void *args) that is sent to accept_connections(void *args)
+struct data {
+	int server;
+	int nconnections;
+	struct pollfd *connections;
 };
 
-/*
- * Accepts connections to the server socket.
- *
- * - Parameter *args: struct thread_info.
- */
-static void *accept_connections(void *args) {	
-	struct thread_info *info = args;
-	while(1) {
-		int fd = accept(info->socket_fd, (struct sockaddr *) NULL, NULL); 
-		if (fd == -1) {
-			handle_error("Accept");
-		};
-		
-		struct pollfd newfd;
-		newfd.fd = fd;
-		newfd.events = POLLIN;
-	
-		info->socket_conn_fds = realloc(info->socket_conn_fds, (info->socket_conn_count+1) * sizeof(struct pollfd));
-		info->socket_conn_fds[info->socket_conn_count] = newfd;
-		info->socket_conn_count += 1;
-		printf("CONNECTION COUNT = %d, FD = %d \n", info->socket_conn_count, fd);
-	};
-};
-
-/*
- * Createas a new socket (server). For more information see `$ man socket`.
- *
- * - Returns: The socket file descriptor.
- */
+/// Createas a new socket (server). For more datarmation see `$ man socket`.
+/// - Returns: The socket file descriptor.
 int create_socket() {
-	int socket_fd = socket(AF_UNIX, SOCK_STREAM, PF_UNIX);
+	int server = socket(AF_UNIX, SOCK_STREAM, PF_UNIX);
 	
 	struct sockaddr_un addr = {
 		AF_UNIX,
 		SOCKET_PATH
 	};
 
-	int bind_status = bind(socket_fd, (struct sockaddr *) &addr, sizeof(addr));
-	if (bind_status == -1) {
-		handle_error("bind");
-	}
-
-	int listen_status = listen(socket_fd, SOCKET_BACKLOG);
-	if (listen_status == -1) {
-		handle_error("listen");
-	}
-	
-	return socket_fd;
+	bind(server, (struct sockaddr *) &addr, sizeof(addr));
+	listen(server, SOCKET_BACKLOG);
+	return server;
 };
 
-/*
- * Reads from the connected socket.
- *
- * - Parameter fd: The connected socket file descriptor.
- * - Parameter length: The buffer length.
- * - Returns: A pointer to the message buffer.
- * - Warning: The pointer points to memory in the stack.   
- */
-char read_message(int fd, char **buffer) {
+/// Accepts connections to the server socket.
+/// - Parameter *args: struct data.
+static void *accept_connections(void *args) {	
+	struct data *data = args;
+	while(1) {
+		int fd = accept(data->server, (struct sockaddr *) NULL, NULL); 
+		if (fd == -1) {
+			handle_error("Accept");
+		};
+		
+		struct pollfd connection;
+		connection.fd = fd;
+		connection.events = POLLIN;
+		
+		data->connections = realloc(data->connections, (data->nconnections+1) * sizeof(struct pollfd));
+		data->connections[data->nconnections] = connection;
+		data->nconnections += 1;
+	};
+};
+
+///	Reads from the connected socket.
+/// - Parameter fd: The connected socket file descriptor.
+/// - Parameter length: The buffer length.
+/// - Returns: A pointer to the message buffer.
+/// - Warning: The pointer points to memory in the stack.   
+char socket_read(int fd, char **buffer) {
 	int bytes = read(fd, *buffer, sizeof(*buffer));
 };
 
-/*
- * Writes to the connected socket.
- * - Parameter fd: The connected socket file descriptor.
- * - Parameter *message: A pointer to the message buffer.
- */
-void write_message(int fd, char *message) {
+/// Writes to the connected socket.
+/// - Parameter fd: The connected socket file descriptor.
+/// - Parameter *message: A pointer to the message buffer.
+void socket_write(int fd, char *message) {
 	ssize_t write_status = write(fd, (const char *) message, sizeof(message));
-	if (write_status == -1) {
-		handle_error("Write");
-	};
 };
 
 int main() {
 	
-	int socket_fd = create_socket();
+	int server = create_socket();
 	
-	/*
-	 * Accepted socket connections in a separate thread.
-	 */
+	/// Accepted socket connections in a separate thread.
+	struct data *data = malloc(sizeof(struct data));
+	data->server = server;
+	data->nconnections = 0;
+	data->connections = malloc(sizeof(struct pollfd));
 	pthread_t thread_id = 0;
-	struct thread_info *info = malloc(sizeof(struct thread_info));
-	info->socket_fd = socket_fd;
-	info->socket_conn_count = 0;
-	info->socket_conn_fds = malloc(sizeof(struct pollfd));
-	thread(thread_id,  &accept_connections, (void *) &info);	
+	thread(thread_id,  &accept_connections, (void *) &data);	
 
-	/*
-	 * Start polling for events on socket connections.
-	 */
+	/// Start polling for events on socket connections.
 	while(1) {
-		int POLL_RESULT_ERROR = -1;
-		int POLL_RESULT_TIMEOUT = 0;
-		int POLL_RESULT_SUCCESS = 1;
-		int POLL_TIMEOUT = 0.05 * 60 * 1000;
-		int result = poll(info->socket_conn_fds, info->socket_conn_count, POLL_TIMEOUT);
+		const int POLL_RESULT_ERROR = -1;
+		const int POLL_RESULT_TIMEOUT = 0;
+		const int POLL_RESULT_SUCCESS = 1;
+		const int POLL_TIMEOUT = 0.05 * 60 * 1000;
+		int rpoll = poll(data->connections, data->nconnections, POLL_TIMEOUT);
 		
-		if (result == POLL_RESULT_ERROR) {
+		if (rpoll == POLL_RESULT_ERROR) {
 			handle_error("Poll");
 		};
 
-		if (result == POLL_RESULT_TIMEOUT) {
+		/// Restart loop after timeout. 
+		if (rpoll == POLL_RESULT_TIMEOUT) {
 			continue;	
 		};
 		
-		/*
-		 * Successful result means one or more connections have events available. 
-		 */
-		if (result == POLL_RESULT_SUCCESS) {
-			for (int i = 0; i < info->socket_conn_count; i++) {
-				struct pollfd fd = info->socket_conn_fds[i];
+		/// One or more connections have events available. 
+		if (rpoll == POLL_RESULT_SUCCESS) {
+			for (int i = 0; i < data->nconnections; i++) {
 				
-				if (fd.revents == 0) {
+				struct pollfd connection = data->connections[i];
+			
+				/// No events available.	
+				if (connection.revents == 0) {
 					continue;			
 				};
 
-				/*
-				 * In any event other than POLLIN close and remove fd from pollfds array.
-				 */
-				if (fd.revents != POLLIN) {
-				
-					struct pollfd *new = calloc(info->socket_conn_count-1, sizeof(struct pollfd));
+				/// Probably, client connection terminated.
+				if (connection.revents != POLLIN) {
+					/// Close connection.
+					close(connection.fd);
+					
+					/// Create new connection array without closed connection.
 					int count = 0;
-					for (int a = 0; a < info->socket_conn_count-1; a++) {
+					int _nconnections = data->nconnections - 1;
+					struct pollfd *pfds = calloc(_nconnections, sizeof(struct pollfd));
+					for (int a = 0; a < _nconnections; a++) {
 						if (a == i) {
 							count++;
 						};
-						new[a] = info->socket_conn_fds[i];
+						pfds[a] = data->connections[count];
 						count++;
 					};
 
-					free(info->socket_conn_fds);
-					info->socket_conn_fds = calloc(info->socket_conn_count-1, sizeof(struct pollfd));
-					info->socket_conn_fds = new;
-					info->socket_conn_count -= 1;
-					close(fd.fd);
+					/// Replace old connection array with resized one.
+					free(data->connections);
+					data->connections = calloc(_nconnections, sizeof(struct pollfd));
+					data->connections = pfds;
+					data->nconnections = _nconnections;
 					continue;
 				};
 
+				/// Read from socket.
 				char *buffer = malloc(1024);
-				read_message(info->socket_conn_fds[i].fd, &buffer);				
-
-				/*
-				 * Send message to other socket connections. 
-				 */
-				for (int o = 0; o < info->socket_conn_count; o++) {
-					if (o == i) {
-						continue;
+				socket_read(connection.fd, &buffer);				
+				
+				/// Write to socket.
+				for (int j = 0; j < data->nconnections; j++) {
+					if (j != i) {
+						socket_write(data->connections[j].fd, buffer);
 					};
-					
-					write_message(info->socket_conn_fds[o].fd, buffer);
 				};
-
 				free(buffer);
 			};
 
@@ -186,10 +151,9 @@ int main() {
 		};	
 	};
 	
-	free(info->socket_conn_fds);
-	free(info);	
+	free(data->connections);
+	free(data);	
 	remove(SOCKET_PATH);
-	close(socket_fd);
-
+	close(server);
 	exit(EXIT_SUCCESS);
 }
