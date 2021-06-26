@@ -55,14 +55,12 @@ static void *accept_connections(void *args) {
 
 ///	Reads from the connected socket.
 /// - Parameter fd: The connected socket file descriptor.
-/// - Parameter length: The buffer length.
-/// - Returns: A pointer to the message buffer.
-/// - Warning: The pointer points to memory in the stack.   
-char socket_read(int fd, char **buffer) {
+/// - Parameter buffer: The buffer to place the bytes in.
+void socket_read(int fd, char **buffer) {
 	int bytes = read(fd, *buffer, sizeof(*buffer));
 };
 
-/// Writes to the connected socket.
+/// Writes to a connected socket.
 /// - Parameter fd: The connected socket file descriptor.
 /// - Parameter *message: A pointer to the message buffer.
 void socket_write(int fd, char *message) {
