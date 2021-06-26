@@ -9,20 +9,17 @@
 		do { perror(message); exit(EXIT_FAILURE); } while (0) 
 
 
-void thread(pthread_t thread_id, void *(*start_routine) (void *), void **args) {
-	/// Thread attributes to be given to pthread_create. Remember, it should be destroyed after pthread_create.
-	pthread_attr_t thread_attributes;
-	int thread_attributes_result = pthread_attr_init(&thread_attributes);
-	if (thread_attributes_result != 0) {
-		handle_error("create attributes");	
-	};
+/// Creates a thread that runs a user specified function.
+/// - Parameter t
+void thread(pthread_t tid, void *(*f) (void *), void **args) {
+	
+	/// Thread attributes are given to pthread_create. Must be destroyed after pthread_create.
+	pthread_attr_t attributes;
+	pthread_attr_init(&attributes);
 
 	/// Create new thread.
-	int thread = pthread_create(&thread_id, &thread_attributes, *start_routine, (void *) *args);
-	if (thread != 0) {
-		handle_error("thread create");
-	};
+	int thread = pthread_create(&tid, &attributes, *f, (void *) *args);
 		
 	/// Destroy attributes.
-	pthread_attr_destroy(&thread_attributes);
+	pthread_attr_destroy(&attributes);
 }

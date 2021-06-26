@@ -1,3 +1,3 @@
 #include <pthread.h>
 
-void thread(pthread_t thread_id, void *(*start_routine) (void *), void **args);
+void thread(pthread_t tid, void *(*f) (void *), void **args);
