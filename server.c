@@ -137,8 +137,6 @@ int main() {
         };
         free(buffer);
       };
-
-      continue;
     };	
   };
 
