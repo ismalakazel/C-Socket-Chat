@@ -102,8 +102,6 @@ int main(int argc, char * args[]) {
       printf("%s", buffer);
       fflush(stdout);
       memset(buffer, 0, length);
-
-      continue;
     };	
   };
 
