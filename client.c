@@ -97,7 +97,7 @@ int main(int argc, char * args[]) {
       /// Read data from socket.
       int length = 1024;	
       char buffer[length];
-      int message = read(pfd.fd, buffer, sizeof(buffer)-1);
+      int message = read(pfd.fd, buffer, length);
       buffer[message] = 0x00;
       printf("%s", buffer);
       fflush(stdout);
