@@ -57,9 +57,10 @@ static void *accept_connections(void *args) {
 /// - Parameter fd: The connected socket file descriptor.
 /// - Parameter buffer: The buffer to place the bytes in.
 /// - Returns: A pointer to the allocated messsage.
-char *socket_read(int fd, int length) {
+char *socket_read(int fd, const int length) {
   char *buffer = (char *) malloc(length);
-  int bytes = read(fd, buffer, sizeof(buffer));
+  int bytes = read(fd, buffer, length);
+  buffer[bytes] = 0x00;
   return buffer;
 };
 
@@ -67,7 +68,7 @@ char *socket_read(int fd, int length) {
 /// - Parameter fd: The connected socket file descriptor.
 /// - Parameter *message: A pointer to the message buffer.
 void socket_write(int fd, char *message) {
-  ssize_t write_status = write(fd, (const char *) message, sizeof(message));
+  ssize_t write_status = write(fd, (const char *) message, strlen(message));
 };
 
 int main() {
