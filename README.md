@@ -222,7 +222,7 @@ Note that when the number of bytes read is 0 or less  it will mean the connected
 
 ```c
 if (bytes <= 0) {
-	remfd(i, &data);
+  remfd(i, &data);
 }
 ```
 
