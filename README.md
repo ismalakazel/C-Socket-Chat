@@ -1,4 +1,4 @@
-# C Sockets
+# C TCP Socket
 
 *© Israel Pereira Tavares da Silva*
 
