@@ -1,112 +1,154 @@
 #include <sys/socket.h>
-#include <sys/un.h>
+#include <string.h>
 #include <unistd.h>
 #include <poll.h>
 #include <stdio.h>
 #include <stdlib.h>
+#include <netdb.h>
 #include <errno.h>
-#include "thread.h"
 
-#define SOCKET_PATH "/tmp/socket"
-#define SOCKET_BACKLOG 2
-#define handle_error(msg) do { perror(msg); exit(EXIT_FAILURE); } while (0)
+#define MAXBUFFER 1024
+#define POLL_RESULT_ERROR -1
+#define POLL_RESULT_TIMEOUT 0
+#define POLL_RESULT_SUCCESS 1
+#define POLL_TIMEOUT 0.05 * 60 * 1000
+#define herror(msg) do { perror(msg); exit(EXIT_FAILURE); } while (0)
 
-/// Holds data (void *args) that is sent to accept_connections(void *args)
-struct data {
-  int client;
-  char *username;
-};
+typedef enum { FALSE, TRUE } bool;
 
-/// Writes to a socket.
-/// - Parameter args: A struct data.
-static void *write_to_socket(void *args) {	
-  struct data *data = (struct data *) args;
-  char message[1024];
-  while (fgets(message, sizeof(message), stdin)) {
-    int length = strlen(data->username) + strlen(message) + 2;
-    char username[length];
-    strcpy(username, data->username);
-    strcat(username, ": ");
-    strcat(username, message);
-    ssize_t write_status = write(data->client, (const char *) &username, strlen(username));
-    if (write_status == -1) {
-      handle_error("Write");
-    }
-  };
-};
+//////////////////////////////////////////////////////////////////////////////////////////
+/// Retrieves a node of addrinfo based on hostname (IP address or URL) and port number.
+/// For more information:
+/// $ man inet
+/// $ man getaddrinfo
+/// - Returns: A node of addrinfo.
+//////////////////////////////////////////////////////////////////////////////////////////
+struct addrinfo *getaddress(const char hostname[], const char port[]) {
+  struct addrinfo *address;
+  struct addrinfo hints;
 
-int main(int argc, char * args[]) {
+  memset(&hints, 0, sizeof hints); // Clean the struct.
 
-  if (argc <= 0) {
-    printf("Please provide a username when starting this socket:");
+  hints.ai_family = AF_UNSPEC; // IPV4 & IPV6.
+  hints.ai_socktype = SOCK_STREAM; // TCP type.
+  hints.ai_flags = AI_PASSIVE | AI_CANONNAME; // Wildcard IP and canonical name.
+  hints.ai_protocol = 0; // Any protocol.
+  hints.ai_canonname = NULL;
+  hints.ai_addr = NULL;
+  hints.ai_next = NULL;
+
+  const char status = getaddrinfo(hostname, port, &hints, &address);
+  if (status != 0) {
+    fprintf(stderr, "getaddrresult error: %s\n", gai_strerror(status));
     exit(EXIT_FAILURE);
-  };	
+  }
 
-  char *username = args[1];
+  return address;
+}
 
-  /// Get socket description.
-  int client = socket(AF_UNIX, SOCK_STREAM, PF_UNIX);
-  struct sockaddr_un addr = { 
-    AF_UNIX,
-    SOCKET_PATH,
-  };
+//////////////////////////////////////////////////////////////////////////////////////////
+/// Creates  and binds a socket that listen to new socket connections.
+/// - Parameter *address: A pointer to a node of addrinfo.
+/// - Returns: The socker file descriptor.
+//////////////////////////////////////////////////////////////////////////////////////////
+int upsocket(struct addrinfo *address) {
+  const char fd = socket(address->ai_family, address->ai_socktype, address->ai_protocol);
 
-  /// Connect to a socket.
-  int socket_conn_fd = connect(client, (struct sockaddr *) &addr, sizeof(addr));
+  if (fd < 0)
+    herror("Accept");
 
-  /// Wait for user input and write it to the socket.
-  pthread_t tid = 0;
-  struct data *data = malloc(sizeof(struct data));
-  data->client = client;
-  data->username = username;
-  thread(tid, &write_to_socket, (void *) &data);	
+  const char cr = connect(fd, address->ai_addr, address->ai_addrlen);
+  if (cr < 0) 
+    herror("Connect");
 
-  /// Socket to be monitored for events.
-  struct pollfd pfd;
-  pfd.fd = client;
-  pfd.events = POLLIN;
-  struct pollfd pollfds[1] = { pfd };	
+  freeaddrinfo(address);
+  return fd;
+}
 
-  /// Start polling for socket events.
-  while(1) {
-    const int POLL_RESULT_ERROR = -1;
-    const int POLL_RESULT_TIMEOUT = 0;
-    const int POLL_RESULT_SUCCESS = 1;
-    const int POLL_TIMEOUT = 0.05 * 60 * 1000;
-    int rpoll = poll(pollfds, 1, POLL_TIMEOUT);
+//////////////////////////////////////////////////////////////////////////////////////////
+/// A program that connects to a socket.
+/// - Parameter argv[1]: The username of the connection socket.
+/// - Parameter argv[2]: The socket hostname.
+/// - Parameter argv[3]: The socket port.
+//////////////////////////////////////////////////////////////////////////////////////////
+int main(int argc, char * argv[]) {
+  if (argc <= 3) {
+    printf("Arguments are username, hostname and port.\n");
+    exit(EXIT_FAILURE);
+  }
+
+  char *username = argv[1];
+  const char *hostname = argv[2];
+  const char *port = argv[3];
+  struct addrinfo *address = getaddress(hostname, port);
+  const char client = upsocket(address);
+  bool isrunning = TRUE;
+ 
+  struct pollfd sfd;
+  sfd.fd = client;
+  sfd.events = POLLIN;
+
+  struct pollfd ifd;
+  ifd.fd = STDIN_FILENO;
+  ifd.events = POLLIN;
+
+  const int nfds = 2;
+  
+  struct pollfd pollfds[2] = { sfd, ifd };	
+
+  while(isrunning) {
+
+    int rpoll = poll(pollfds, nfds, POLL_TIMEOUT);
 
     if (rpoll == POLL_RESULT_ERROR) {
-      handle_error("Poll");
-    };
+      herror("Poll");
+    }
 
     if (rpoll == POLL_RESULT_TIMEOUT) {
       continue;	
-    };
+    }
 
-    /// Client socket has events available. 
     if (rpoll == POLL_RESULT_SUCCESS) {
+      for (int i = 0; i < nfds; i++) {
+     
+        if (pollfds[i].revents == 0) {
+          continue;			
+        }
 
-      if (pollfds[0].revents == 0) {
-        continue;			
-      };
+        if (pollfds[i].revents != POLLIN) {
+          isrunning = FALSE;
+          break;
+        }
 
-      if (pollfds[0].revents != POLLIN) {
-        break;
-      };	
+        if (pollfds[i].revents == POLLIN) {
+          char buffer[MAXBUFFER];
+          int bytes = read(pollfds[i].fd, buffer, MAXBUFFER);
+          buffer[bytes] = 0x00;
 
-      /// Read data from socket.
-      int length = 1024;	
-      char buffer[length];
-      int message = read(pfd.fd, buffer, length);
-      buffer[message] = 0x00;
-      printf("%s", buffer);
-      fflush(stdout);
-      memset(buffer, 0, length);
-    };	
-  };
+          if (bytes <= 0) {
+            isrunning = FALSE;
+          }
+          
+          if (pollfds[i].fd == STDIN_FILENO) {
+            const int length = strlen(username) + strlen(buffer) + 3;
+            char message[length];
+            strcpy(message, username);
+            strcat(message, ": ");
+            strcat(message, buffer);
+            char wr = write(client, message, length);
+            if (wr < 0)
+              herror("Write");
+          } else {
+            printf("%s", buffer); 
+          }
 
-  free(data);
-  remove(SOCKET_PATH);
+          memset(buffer, 0, MAXBUFFER);
+        }
+      } 
+    }	
+  }
+
   close(client);
+  close(STDIN_FILENO);
   exit(EXIT_SUCCESS);
 }
